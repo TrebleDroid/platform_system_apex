@@ -35,6 +35,7 @@
 #include <sys/statfs.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <utils/Trace.h>
 
@@ -351,7 +352,20 @@ Result<void> ConfigureLoopDevice(const int device_fd, const std::string& target,
    * condition is now met.
    */
   bool use_buffered_io = false;
-  unique_fd target_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECT));
+  bool enable_odirect = false;
+  struct utsname uts;
+  unsigned int major, minor;
+  if (uname(&uts) == 0 && sscanf(uts.release, "%u.%u", &major, &minor) == 2) {
+    if(major > 4) enable_odirect = true;
+    if(major == 4 && minor > 19) enable_odirect = true;
+  }
+  unique_fd target_fd;
+  if (enable_odirect) {
+    target_fd = unique_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECT));
+  } else {
+    target_fd = unique_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC));
+  }
+  //unique_fd target_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC));
   if (target_fd.get() == -1) {
     struct statfs stbuf;
     int saved_errno = errno;
